@@ -25,3 +25,9 @@ This will expose the presentation on your localhost on port 8088 which you can v
 The slides are currently hosted on http://slides.rquitales.com (Currently not on https as I haven't configure SSL for the websocket connections, needs to be fixed!).
 
 I recommend you creating a temporary DigitalOcean token for testing purposes, and destroying the token after using on the public slides.
+
+## PDF of Slides
+
+You can view the exported PDF of the slides under releases: 
+
+https://github.com/rquitales/gdg-operator-presentation/releases
