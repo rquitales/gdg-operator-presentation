@@ -1,0 +1,16 @@
+# Move into project folder
+cd ~/projects/serverless
+
+# Let's get our DigitalOcean credentials
+DIGITALOCEAN_ACCESS_TOKEN=<INSERT YOUR TOKEN HERE> doctl auth init
+
+# Get kubectl credentials - check your digitalocean online console for help
+doctl kubernetes cluster kubeconfig save <INSERT_KUBERNETES_URN>
+
+# Get external golang dependencies
+go mod tidy
+
+# Install CRDs to cluster, and run our custom controller
+make
+make install
+make run

@@ -1,0 +1,364 @@
+import { Component } from 'react';
+import AceEditor from 'react-ace';
+import styles from './code.module.css';
+import './code.css';
+import { Rnd } from 'react-rnd';
+import { Payload } from './interfaces';
+
+import {
+  Button,
+  ButtonGroup,
+  Grid,
+  FormGroup,
+  FormControlLabel,
+  Switch,
+  Snackbar,
+  Select,
+  MenuItem,
+  InputLabel,
+  FormControl,
+  Card,
+  CardContent,
+} from '@material-ui/core';
+import MuiAlert from '@material-ui/lab/Alert';
+
+import 'ace-builds/src-noconflict/mode-golang';
+import 'ace-builds/src-noconflict/theme-mono_industrial';
+import 'ace-builds/src-noconflict/ext-language_tools';
+
+interface Props {
+  value?: string;
+  client: WebSocket;
+  runner?: string;
+  pID?: string; // Hack to share pID across multiple websocket connections - mainly for terraform operations where state matters.
+  resp: any; //Global resp store.
+}
+
+interface State {
+  editorText: string;
+  pID: string;
+  responses?: Payload[]; // we should type the response struct too...
+  kind: string;
+  showOutput: boolean;
+  autoScroll: boolean;
+  snackBar: boolean;
+  lastResponseType?: string;
+}
+
+function sanitise(str: string) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+}
+
+class Editor extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      editorText: this.props.value || '',
+      pID: this.props.pID || `${Math.floor(Math.random() * 9999999)}`,
+      kind: this.props.runner || 'run',
+      showOutput: false,
+      autoScroll: true,
+      snackBar: false,
+    };
+
+    this.handleChange = this.handleChange.bind(this);
+    this.handleClose = this.handleClose.bind(this);
+    this.handleAutoScroll = this.handleAutoScroll.bind(this);
+    this.scrollToBottom = this.scrollToBottom.bind(this);
+    this.toggleSnackbar = this.toggleSnackbar.bind(this);
+    this.snackbarSuccess = this.snackbarSuccess.bind(this);
+  }
+
+  killCode = () => {
+    this.props.client.send(
+      JSON.stringify({
+        Id: this.state.pID,
+        Kind: 'kill',
+      } as Payload)
+    );
+  };
+
+  runCode = () => {
+    this.setState({
+      responses: [] as Payload[],
+      showOutput: true,
+      snackBar: false,
+    } as State);
+
+    this.props.client.send(
+      JSON.stringify({
+        Id: this.state.pID,
+        Kind: this.state.kind === 'shell' ? 'run' : this.state.kind,
+        Body:
+          this.state.kind === 'shell'
+            ? '#!/bin/bash\n' + this.state.editorText
+            : this.state.editorText,
+      } as Payload)
+    );
+  };
+
+  onChange = (newValue: string) => {
+    this.setState({ editorText: newValue } as State);
+  };
+
+  clear = () => {
+    this.setState({ responses: [] as Payload[], snackBar: false } as State);
+  };
+
+  handleChange(event: React.ChangeEvent<{ value: unknown }>) {
+    this.setState({ kind: event.target.value, snackBar: false } as State);
+  }
+
+  handleClose() {
+    const toggle = !this.state.showOutput;
+    this.setState({ showOutput: toggle } as State);
+  }
+
+  handleAutoScroll() {
+    this.setState({ autoScroll: !this.state.autoScroll } as State);
+  }
+
+  seqID = 0;
+
+  componentDidUpdate() {
+    this.scrollToBottom();
+  }
+
+  scrollToBottom() {
+    if (!this.state.autoScroll) {
+      return;
+    }
+    this.output?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  output = null as HTMLDivElement | null;
+
+  showOutput() {
+    return (
+      <Rnd
+        style={{ display: this.state.showOutput ? 'block' : 'none' }}
+        default={{
+          x: 0,
+          y: 0,
+          width: 580,
+          height: 520,
+        }}
+        className="output"
+      >
+        <pre>
+          {(this.state.responses ?? [])
+            .filter((resp) => {
+              return resp.Body ?? false;
+            })
+            .map((resp) => {
+              return (
+                <div
+                  key={resp.Id + resp.Kind + `${resp.seqID}`}
+                  className={resp.Kind}
+                  ref={(ele) => {
+                    this.output = ele;
+                  }}
+                >
+                  {sanitise(resp.Body!)}
+                </div>
+              );
+            })}
+        </pre>
+        <FormGroup row>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={this.state.autoScroll}
+                onChange={this.handleAutoScroll}
+                name="enableAutoScroll"
+                color="primary"
+                size="small"
+              />
+            }
+            label="Autoscroll"
+          />
+          <Button
+            variant="outlined"
+            color="primary"
+            size="small"
+            onClick={this.clear}
+          >
+            Clear
+          </Button>
+        </FormGroup>
+      </Rnd>
+    );
+  }
+
+  toggleSnackbar(event?: React.SyntheticEvent, reason?: string) {
+    if (reason === 'clickaway') {
+      return;
+    }
+
+    this.setState({ snackBar: false } as State);
+  }
+
+  snackbarSuccess() {
+    const lastResp = this.state.responses![this.state.responses!.length - 1];
+    if (!lastResp) {
+      return false;
+    }
+
+    return lastResp.Body === '';
+  }
+
+  showSnackBar() {
+    return (
+      <div>
+        <Snackbar
+          open={this.state.snackBar && this.snackbarSuccess()}
+          onClose={this.toggleSnackbar}
+        >
+          <MuiAlert
+            elevation={6}
+            variant="filled"
+            onClose={this.toggleSnackbar}
+            severity="success"
+          >
+            {`${this.state.kind}`} finished!
+          </MuiAlert>
+        </Snackbar>
+        {/* {/* <Alert severity="error">This is an error message!</Alert> */}
+        <Snackbar
+          open={this.state.snackBar && !this.snackbarSuccess()}
+          onClose={this.toggleSnackbar}
+        >
+          <MuiAlert
+            elevation={6}
+            variant="filled"
+            onClose={this.toggleSnackbar}
+            severity="error"
+          >
+            Error running "{`${this.state.kind}`}" command!
+          </MuiAlert>
+        </Snackbar>
+      </div>
+    );
+  }
+
+  showEditor() {
+    return (
+      <Grid container xs={12} spacing={1}>
+        <Grid item xs={12} spacing={1}>
+          <AceEditor
+            className={styles.ace_editor}
+            mode="golang"
+            theme="mono_industrial"
+            name="example"
+            onChange={this.onChange}
+            style={{
+              width: `100%`,
+              height: '400px',
+              padding: `0`,
+              margin: `0`,
+            }}
+            setOptions={{
+              showGutter: true,
+              enableBasicAutocompletion: true,
+              enableSnippets: true,
+              enableLiveAutocompletion: true,
+              showLineNumbers: true,
+              tabSize: 2,
+              hasCssTransforms: true,
+            }}
+            defaultValue={this.props.value || ''}
+            editorProps={{ $blockScrolling: true }}
+          />
+        </Grid>
+      </Grid>
+    );
+  }
+
+  showControls() {
+    return (
+      <Grid container>
+        {/* <Grid item xs={4}>
+          <ButtonGroup variant="contained" size="large" color="primary">
+            <Button onClick={this.runCode} color="primary">
+              Run
+            </Button>
+            <Button onClick={this.killCode} color="secondary">
+              Kill
+            </Button>
+            <Button onClick={this.handleClose}>Output</Button>
+          </ButtonGroup>
+        </Grid> */}
+
+        <Grid item xs={12}>
+          <ButtonGroup variant="contained" size="large" color="primary">
+            <Button onClick={this.runCode} color="primary">
+              Run
+            </Button>
+            <Button onClick={this.killCode} color="secondary">
+              Kill
+            </Button>
+            <Button onClick={this.handleClose}>Output</Button>
+          </ButtonGroup>
+
+          <FormControl variant="filled" size="small">
+            <InputLabel id="select-runner-label">Runner</InputLabel>
+            <Select
+              labelId="select-runner-label"
+              id="select-runner"
+              value={this.state.kind}
+              onChange={this.handleChange}
+              variant="filled"
+            >
+              <MenuItem value={'run'}>Golang</MenuItem>
+              <MenuItem value={'shell'}>Shell</MenuItem>
+              <MenuItem value={'kubectlApply'}>kubectl - Apply</MenuItem>
+              <MenuItem value={'kubectlCreate'}>kubectl - Create</MenuItem>
+              <MenuItem value={'kubectlDelete'}>kubectl - Delete</MenuItem>
+              <MenuItem value={'terraformApply'}>terraform - apply</MenuItem>
+              <MenuItem value={'terraformDestroy'}>
+                terraform - destroy
+              </MenuItem>
+            </Select>
+          </FormControl>
+        </Grid>
+      </Grid>
+    );
+  }
+
+  render() {
+    // this.props.client.onmessage = (message) => {
+    //   const dataFromServer: Payload = JSON.parse(message.data);
+    //   dataFromServer.seqID = this.seqID;
+    //   this.seqID += 1;
+    //   let stateToChange = {
+    //     responses: [...(this.state.responses ?? []), dataFromServer],
+    //   };
+
+    //   this.setState({
+    //     ...stateToChange,
+    //     snackBar: dataFromServer.Kind === 'end',
+    //     lastResponseType: dataFromServer.Kind,
+    //   } as State);
+
+    //   console.log(this.state);
+    // };
+
+    return (
+      <Card>
+        <CardContent>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              {this.showEditor()}
+            </Grid>
+            {this.showControls()}
+
+            {this.showOutput()}
+            {this.showSnackBar()}
+          </Grid>
+        </CardContent>
+      </Card>
+    );
+  }
+}
+
+export default Editor;

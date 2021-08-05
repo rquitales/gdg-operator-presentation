@@ -1,0 +1,5 @@
+.ace_editor span,
+.ace_editor textarea {
+  font: 12px / normal 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas',
+    'source-code-pro', monospace;
+}

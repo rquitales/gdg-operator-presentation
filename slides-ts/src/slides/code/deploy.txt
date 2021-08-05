@@ -1,0 +1,16 @@
+apiVersion: serverless.rquitales.com/v1alpha1
+kind: Function
+metadata:
+  name: sample-hello-world-golang
+spec:
+  functionName: myFunction
+  runtime: "go"
+  code: |
+    import (
+      "fmt"
+      "net/http"
+    )
+
+    func myFunction(w http.ResponseWriter, r *http.Request) {
+      fmt.Fprint(w, "Hello World!")
+    }

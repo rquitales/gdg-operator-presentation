@@ -1,0 +1,64 @@
+import { Component } from 'react';
+import { Button } from '@material-ui/core';
+import { Slide, Heading } from 'spectacle';
+import { Payload } from '../common/interfaces';
+
+interface Props {
+  pID: string; // Hack to share pID across multiple websocket connections - mainly for terraform operations where state matters.
+}
+
+interface State {
+  pID: string;
+}
+
+class Page extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      pID: this.props.pID,
+      resp
+    };
+
+    this.destroy = this.destroy.bind(this);
+  }
+
+  host = window.location.host;
+  client = new WebSocket(`ws://${this.host}/socket`);
+
+  this.client.onmessage = (message: any) => {
+    const dataFromServer: Payload = JSON.parse(message.data);
+    let stateToChange = {
+      responses: [...(this.state.responses ?? []), dataFromServer],
+    };
+  
+    this.setState({
+      ...stateToChange,
+      snackBar: dataFromServer.Kind === 'end',
+      lastResponseType: dataFromServer.Kind,
+    } as State);
+  
+    console.log(this.state);
+  };
+
+
+  destroy = () => {
+    client.send(
+      JSON.stringify({
+        Id: this.state.pID,
+        Kind: "terraformDestroy",
+        Body: "",
+      } as Payload)
+    );
+  };
+
+  render() {
+    return (
+      <Slide>
+        <Heading>Teardown Cluster</Heading>
+        <Button onClick={this.destroy}>Destroy Kubernetes Cluster</Button>
+      </Slide>
+    );
+  }
+}
+
+export default Page;
